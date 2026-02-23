@@ -90,7 +90,8 @@ async function applyColor(hue: number): Promise<void> {
   const inactiveFg = contrastColor(inactiveBg);
 
   const cfg = vscode.workspace.getConfiguration("workbench");
-  const existing = cfg.get<Record<string, string>>("colorCustomizations", {});
+  const inspected = cfg.inspect<Record<string, string>>("colorCustomizations");
+  const existing = inspected?.globalValue ?? {};
 
   await cfg.update(
     "colorCustomizations",
@@ -103,18 +104,19 @@ async function applyColor(hue: number): Promise<void> {
       "statusBar.background": activeBg,
       "statusBar.foreground": activeFg,
     },
-    vscode.ConfigurationTarget.Workspace
+    vscode.ConfigurationTarget.Global
   );
 }
 
 async function clearColor(): Promise<void> {
   const cfg = vscode.workspace.getConfiguration("workbench");
-  const existing = cfg.get<Record<string, string>>("colorCustomizations", {});
+  const inspected = cfg.inspect<Record<string, string>>("colorCustomizations");
+  const existing = inspected?.globalValue ?? {};
   const cleaned = Object.fromEntries(
     Object.entries(existing).filter(([k]) => !MANAGED_KEYS.includes(k as ManagedKey))
   );
   const target = Object.keys(cleaned).length > 0 ? cleaned : undefined;
-  await cfg.update("colorCustomizations", target, vscode.ConfigurationTarget.Workspace);
+  await cfg.update("colorCustomizations", target, vscode.ConfigurationTarget.Global);
 }
 
 // --- Git helpers ---
