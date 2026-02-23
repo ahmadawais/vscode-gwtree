@@ -2,7 +2,7 @@
   "name": "vscode-gwtree",
   "displayName": "GW Tree",
   "description": "Color your title bar and status bar per git branch or worktree",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "publisher": "ahmadawais",
   "license": "MIT",
   "engines": {

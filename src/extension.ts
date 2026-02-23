@@ -56,11 +56,11 @@ function stateKey(repoPath: string, branch: string): string {
   return `gwtree:${repoPath}:${branch}`;
 }
 
-function resolveHue(
+async function resolveHue(
   ctx: vscode.ExtensionContext,
   repoPath: string,
   branch: string
-): number | null {
+): Promise<number | null> {
   const cfg = vscode.workspace.getConfiguration("gwtree");
 
   if (!cfg.get<boolean>("enabled", true)) return null;
@@ -77,7 +77,7 @@ function resolveHue(
   if (stored !== undefined) return stored;
 
   const hue = randomHue();
-  ctx.globalState.update(key, hue);
+  await ctx.globalState.update(key, hue);
   return hue;
 }
 
@@ -132,22 +132,50 @@ function resolveRepo(git: GitAPI): Repository | undefined {
   return best ?? git.repositories[0];
 }
 
+let pendingSeq = 0;
+let lastAppliedHue: number | null | undefined;
+
+function scheduleHandleBranch(
+  ctx: vscode.ExtensionContext,
+  repo: Repository
+): void {
+  const seq = ++pendingSeq;
+  // 80ms debounce — drops intermediate calls from the
+  // settings-write → git-change → onDidChange feedback loop.
+  const timer = new vscode.Disposable(() => {});
+  void new Promise<void>((resolve) => {
+    const id = (globalThis as any).setTimeout(() => {
+      if (seq === pendingSeq) handleBranch(ctx, repo);
+      resolve();
+    }, 80);
+    timer.dispose = () => (globalThis as any).clearTimeout(id);
+  });
+}
+
 async function handleBranch(
   ctx: vscode.ExtensionContext,
   repo: Repository
 ): Promise<void> {
   const branch = repo.state.HEAD?.name;
   if (!branch) {
-    await clearColor();
+    if (lastAppliedHue !== null) {
+      lastAppliedHue = null;
+      await clearColor();
+    }
     return;
   }
 
-  const hue = resolveHue(ctx, repo.rootUri.fsPath, branch);
+  const hue = await resolveHue(ctx, repo.rootUri.fsPath, branch);
   if (hue === null) {
-    await clearColor();
+    if (lastAppliedHue !== null) {
+      lastAppliedHue = null;
+      await clearColor();
+    }
     return;
   }
 
+  if (lastAppliedHue === hue) return;
+  lastAppliedHue = hue;
   await applyColor(hue);
 }
 
@@ -162,7 +190,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
 
   function watchRepo(repo: Repository): void {
     handleBranch(ctx, repo);
-    const disposable = repo.state.onDidChange(() => handleBranch(ctx, repo));
+    const disposable = repo.state.onDidChange(() => scheduleHandleBranch(ctx, repo));
     ctx.subscriptions.push(disposable);
   }
 
@@ -172,15 +200,16 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   ctx.subscriptions.push(
     vscode.window.onDidChangeActiveTextEditor(() => {
       const repo = resolveRepo(git);
-      if (repo) handleBranch(ctx, repo);
+      if (repo) scheduleHandleBranch(ctx, repo);
     })
   );
 
   ctx.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (!e.affectsConfiguration("gwtree")) return;
+      lastAppliedHue = undefined; // force re-apply on config change
       const repo = resolveRepo(git);
-      if (repo) handleBranch(ctx, repo);
+      if (repo) scheduleHandleBranch(ctx, repo);
     })
   );
 
@@ -196,6 +225,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
 
       const hue = randomHue();
       await ctx.globalState.update(stateKey(repo.rootUri.fsPath, branch), hue);
+      lastAppliedHue = hue;
       await applyColor(hue);
       vscode.window.showInformationMessage(
         `GW Tree: New color for "${branch}" — ${hslToHex(hue, 60, 40)}`
@@ -214,6 +244,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
       if (!branch) return;
 
       await ctx.globalState.update(stateKey(repo.rootUri.fsPath, branch), undefined);
+      lastAppliedHue = null;
       await clearColor();
       vscode.window.showInformationMessage(`GW Tree: Color reset for "${branch}".`);
     })

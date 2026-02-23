@@ -75,6 +75,9 @@ assets/img/.DS_Store
 .next
 
 
-# CLIs 
+# CLIs
 dist
 opensrc
+
+# VSIX packages
+*.vsix
