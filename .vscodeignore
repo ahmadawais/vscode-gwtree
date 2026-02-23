@@ -1,0 +1,8 @@
+src/
+tsup.config.ts
+tsconfig.json
+.eslintrc*
+.prettierrc*
+node_modules/
+*.map
+.commandcode/

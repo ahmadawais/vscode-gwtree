@@ -1,0 +1,63 @@
+{
+  "name": "vscode-gwtree",
+  "displayName": "GW Tree",
+  "description": "Color your title bar and status bar per git branch or worktree",
+  "version": "0.0.1",
+  "publisher": "ahmadawais",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "keywords": ["git", "worktree", "branch", "color", "titlebar"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "GW Tree",
+      "properties": {
+        "gwtree.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable or disable branch coloring."
+        },
+        "gwtree.defaultBranches": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["main", "master"],
+          "description": "Branches that get no color (treated as default/uncolored)."
+        },
+        "gwtree.branchColors": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^#[0-9a-fA-F]{6}$"
+          },
+          "default": {},
+          "markdownDescription": "Map of branch name → hex color. Example:\n```json\n{\n  \"feature/auth\": \"#4f46e5\",\n  \"hotfix/login\": \"#dc2626\"\n}\n```"
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "gwtree.reroll",
+        "title": "GW Tree: Reroll Color for Current Branch"
+      },
+      {
+        "command": "gwtree.reset",
+        "title": "GW Tree: Reset Color for Current Branch"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "package": "vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^2.24.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.4.0"
+  }
+}

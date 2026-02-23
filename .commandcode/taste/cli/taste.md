@@ -1,0 +1,13 @@
+# cli
+- Use Commander.js for commands. Confidence: 0.85
+- Use clack for interactive input. Confidence: 0.85
+- Use picocolors for colors. Confidence: 0.85
+- Use ora for spinners. Confidence: 0.85
+- Use Ink + ink-spinner for interactive UIs. Confidence: 0.85
+- One file per command inside `commands/`. Confidence: 0.85
+- Pull version from `package.json` — never hardcode it. Confidence: 0.85
+- Lowercase flags only: `-v`/`--version`, `-h`/`--help`. `-v` prints version number and nothing else. Confidence: 0.85
+- Hide internal flags with `.addOption(new Option('--local').hideHelp())`. Confidence: 0.80
+- 150px ASCII art banner with CLI name; ANSI Shadow font on wide terminals, ANSI Compact on narrow. Confidence: 0.80
+- White, gray, black colors only for CLI output. Confidence: 0.80
+- Check for name conflicts before `pnpm link`. Confidence: 0.80
