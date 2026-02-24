@@ -46,21 +46,24 @@ function hexToHue(hex: string): number {
   return ((r - g) / d + 4) * 60;
 }
 
-function randomHue(): number {
-  return Math.floor(Math.random() * 360);
+function branchHue(branch: string): number {
+  let h = 0;
+  for (let i = 0; i < branch.length; i++) {
+    h = ((h << 5) - h + branch.charCodeAt(i)) | 0;
+  }
+  return ((h % 360) + 360) % 360;
 }
 
 // --- State helpers ---
 
-function stateKey(repoPath: string, branch: string): string {
-  return `gwtree:${repoPath}:${branch}`;
+function stateKey(branch: string): string {
+  return `gwtree:branch:${branch}`;
 }
 
-async function resolveHue(
+function resolveHue(
   ctx: vscode.ExtensionContext,
-  repoPath: string,
   branch: string
-): Promise<number | null> {
+): number | null {
   const cfg = vscode.workspace.getConfiguration("gwtree");
 
   if (!cfg.get<boolean>("enabled", true)) return null;
@@ -72,12 +75,12 @@ async function resolveHue(
   const userHex = colorMap[branch];
   if (userHex) return hexToHue(userHex);
 
-  const key = stateKey(repoPath, branch);
+  const key = stateKey(branch);
   const stored = ctx.globalState.get<number>(key);
   if (stored !== undefined) return stored;
 
-  const hue = randomHue();
-  await ctx.globalState.update(key, hue);
+  const hue = branchHue(branch);
+  ctx.globalState.update(key, hue);
   return hue;
 }
 
@@ -136,49 +139,51 @@ function resolveRepo(git: GitAPI): Repository | undefined {
 
 let pendingSeq = 0;
 let lastAppliedHue: number | null | undefined;
+let busy = false;
 
-function scheduleHandleBranch(
+function scheduleUpdate(
   ctx: vscode.ExtensionContext,
-  repo: Repository
+  git: GitAPI
 ): void {
   const seq = ++pendingSeq;
-  // 80ms debounce — drops intermediate calls from the
-  // settings-write → git-change → onDidChange feedback loop.
-  const timer = new vscode.Disposable(() => {});
-  void new Promise<void>((resolve) => {
-    const id = (globalThis as any).setTimeout(() => {
-      if (seq === pendingSeq) handleBranch(ctx, repo);
-      resolve();
-    }, 80);
-    timer.dispose = () => (globalThis as any).clearTimeout(id);
-  });
+  (globalThis as any).setTimeout(() => {
+    if (seq === pendingSeq) update(ctx, git);
+  }, 80);
 }
 
-async function handleBranch(
+async function update(
   ctx: vscode.ExtensionContext,
-  repo: Repository
+  git: GitAPI
 ): Promise<void> {
-  const branch = repo.state.HEAD?.name;
-  if (!branch) {
-    if (lastAppliedHue !== null) {
-      lastAppliedHue = null;
-      await clearColor();
-    }
-    return;
-  }
+  if (busy) return;
+  busy = true;
+  try {
+    const repo = resolveRepo(git);
+    const branch = repo?.state.HEAD?.name;
 
-  const hue = await resolveHue(ctx, repo.rootUri.fsPath, branch);
-  if (hue === null) {
-    if (lastAppliedHue !== null) {
-      lastAppliedHue = null;
-      await clearColor();
+    if (!branch) {
+      if (lastAppliedHue !== null) {
+        lastAppliedHue = null;
+        await clearColor();
+      }
+      return;
     }
-    return;
-  }
 
-  if (lastAppliedHue === hue) return;
-  lastAppliedHue = hue;
-  await applyColor(hue);
+    const hue = resolveHue(ctx, branch);
+    if (hue === null) {
+      if (lastAppliedHue !== null) {
+        lastAppliedHue = null;
+        await clearColor();
+      }
+      return;
+    }
+
+    if (lastAppliedHue === hue) return;
+    lastAppliedHue = hue;
+    await applyColor(hue);
+  } finally {
+    busy = false;
+  }
 }
 
 // --- Extension lifecycle ---
@@ -191,27 +196,25 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   const git = gitExt.exports.getAPI(1 as 1);
 
   function watchRepo(repo: Repository): void {
-    handleBranch(ctx, repo);
-    const disposable = repo.state.onDidChange(() => scheduleHandleBranch(ctx, repo));
-    ctx.subscriptions.push(disposable);
+    ctx.subscriptions.push(
+      repo.state.onDidChange(() => scheduleUpdate(ctx, git))
+    );
   }
 
+  // Apply once on startup, then watch for changes.
+  update(ctx, git);
   for (const repo of git.repositories) watchRepo(repo);
   ctx.subscriptions.push(git.onDidOpenRepository(watchRepo));
 
   ctx.subscriptions.push(
-    vscode.window.onDidChangeActiveTextEditor(() => {
-      const repo = resolveRepo(git);
-      if (repo) scheduleHandleBranch(ctx, repo);
-    })
+    vscode.window.onDidChangeActiveTextEditor(() => scheduleUpdate(ctx, git))
   );
 
   ctx.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (!e.affectsConfiguration("gwtree")) return;
       lastAppliedHue = undefined; // force re-apply on config change
-      const repo = resolveRepo(git);
-      if (repo) scheduleHandleBranch(ctx, repo);
+      scheduleUpdate(ctx, git);
     })
   );
 
@@ -225,8 +228,8 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
       const branch = repo.state.HEAD?.name;
       if (!branch) return;
 
-      const hue = randomHue();
-      await ctx.globalState.update(stateKey(repo.rootUri.fsPath, branch), hue);
+      const hue = Math.floor(Math.random() * 360);
+      await ctx.globalState.update(stateKey(branch), hue);
       lastAppliedHue = hue;
       await applyColor(hue);
       vscode.window.showInformationMessage(
@@ -245,7 +248,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
       const branch = repo.state.HEAD?.name;
       if (!branch) return;
 
-      await ctx.globalState.update(stateKey(repo.rootUri.fsPath, branch), undefined);
+      await ctx.globalState.update(stateKey(branch), undefined);
       lastAppliedHue = null;
       await clearColor();
       vscode.window.showInformationMessage(`GW Tree: Color reset for "${branch}".`);
